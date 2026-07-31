@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.env
+
+# Node
+node_modules/
+frontend/node_modules/
+
+# Build artifacts (kept in repo for convenience but can be regenerated)
+backend/static/bundle.js.map
+backend/static/bundle.css.map
+
+# Data
+/tmp/
+*.log
+.DS_Store
