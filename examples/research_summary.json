@@ -1,0 +1,56 @@
+# Example workflow: research -> summarise -> save
+# Run: curl -X POST http://localhost:8000/api/run -H "Content-Type: application/json" -d @examples/research_summary.json
+{
+  "name": "Research Summary",
+  "description": "Fetch top stories, summarise with an LLM, save the result, and extract titles.",
+  "nodes": [
+    {
+      "id": "fetch_news",
+      "type": "http",
+      "config": {
+        "method": "GET",
+        "url": "https://hacker-news.firebaseio.com/v0/topstories.json",
+        "query": { "limitTo": "first", "orderBy": "\"$key\"" }
+      },
+      "position": { "x": 40, "y": 120 }
+    },
+    {
+      "id": "summarise",
+      "type": "llm",
+      "config": {
+        "provider": "openai",
+        "model": "gpt-4o-mini",
+        "api_key": "${{env:OPENAI_API_KEY}}",
+        "system": "You are a concise tech-news analyst. Summarise the given story IDs in 3 bullet points.",
+        "user": "Here are the top Hacker News story IDs: {{fetch_news.body}}",
+        "temperature": 0.3
+      },
+      "position": { "x": 380, "y": 80 }
+    },
+    {
+      "id": "save",
+      "type": "file",
+      "config": {
+        "operation": "write",
+        "path": "summary.txt",
+        "content": "{{summarise.text}}"
+      },
+      "position": { "x": 720, "y": 80 }
+    },
+    {
+      "id": "extract_ids",
+      "type": "transform",
+      "config": {
+        "operation": "json_path",
+        "data": "{{fetch_news.body}}",
+        "field": "0.1.2"
+      },
+      "position": { "x": 380, "y": 260 }
+    }
+  ],
+  "edges": [
+    { "source": "fetch_news", "target": "summarise" },
+    { "source": "summarise", "target": "save" },
+    { "source": "fetch_news", "target": "extract_ids" }
+  ]
+}
