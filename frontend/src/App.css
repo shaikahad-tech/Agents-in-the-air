@@ -1,0 +1,104 @@
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: system-ui, -apple-system, sans-serif; background: #0f172a; color: #e2e8f0; }
+.app { display: flex; flex-direction: column; height: 100vh; }
+
+.topbar {
+  display: flex; align-items: center; gap: 12px;
+  padding: 8px 16px; background: #1e293b; border-bottom: 1px solid #334155;
+}
+.brand { font-weight: 700; font-size: 18px; color: #818cf8; }
+.wf-name {
+  flex: 1; max-width: 300px; background: #0f172a; border: 1px solid #334155;
+  color: #e2e8f0; padding: 6px 10px; border-radius: 6px; font-size: 14px;
+}
+.topbar button {
+  background: #334155; color: #e2e8f0; border: none; padding: 6px 14px;
+  border-radius: 6px; cursor: pointer; font-size: 13px;
+}
+.topbar button:hover { background: #475569; }
+.topbar .run-btn { background: #7c3aed; font-weight: 600; }
+.topbar .run-btn:hover { background: #6d28d9; }
+.topbar .run-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.topbar select {
+  background: #0f172a; border: 1px solid #334155; color: #e2e8f0;
+  padding: 6px 10px; border-radius: 6px;
+}
+
+.main { flex: 1; display: flex; overflow: hidden; }
+
+.sidebar {
+  width: 240px; background: #1e293b; border-right: 1px solid #334155;
+  padding: 12px; overflow-y: auto;
+}
+.sidebar h3 { font-size: 14px; margin-bottom: 8px; color: #94a3b8; text-transform: uppercase; }
+.sidebar h4 { font-size: 12px; margin: 16px 0 6px; color: #94a3b8; }
+.hint { font-size: 11px; color: #64748b; margin-bottom: 10px; }
+.palette-node {
+  background: #0f172a; border: 1px solid #334155; border-left: 4px solid #64748b;
+  border-radius: 6px; padding: 10px; margin-bottom: 8px; cursor: grab;
+  transition: background 0.15s;
+}
+.palette-node:hover { background: #1e293b; }
+.palette-node-label { font-weight: 600; font-size: 13px; }
+.palette-node-desc { font-size: 11px; color: #64748b; margin-top: 2px; }
+.sidebar-footer code { display: block; font-size: 11px; color: #818cf8; margin: 4px 0 2px; }
+.sidebar-footer p { font-size: 11px; color: #64748b; margin-bottom: 8px; }
+
+.canvas { flex: 1; background: #0f172a; }
+
+.right-panel {
+  width: 380px; background: #1e293b; border-left: 1px solid #334155;
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.config-panel, .result-panel {
+  padding: 12px; border-bottom: 1px solid #334155; overflow-y: auto;
+}
+.result-panel { flex: 1; border-bottom: none; }
+.config-panel h3, .result-panel h3 {
+  font-size: 14px; margin-bottom: 8px; color: #94a3b8; text-transform: uppercase;
+}
+.muted { color: #64748b; font-size: 12px; }
+.config-node-id { margin-bottom: 10px; }
+.config-node-id code { font-size: 11px; color: #818cf8; }
+.field { margin-bottom: 10px; }
+.field label { display: block; font-size: 12px; margin-bottom: 4px; color: #cbd5e1; }
+.field input, .field select, .field textarea {
+  width: 100%; background: #0f172a; border: 1px solid #334155; color: #e2e8f0;
+  padding: 6px 8px; border-radius: 4px; font-size: 12px; font-family: inherit;
+}
+.field textarea { font-family: 'SF Mono', Menlo, monospace; resize: vertical; }
+.code-editor { font-family: 'SF Mono', Menlo, monospace; font-size: 11px; }
+
+.status-badge {
+  display: inline-block; padding: 2px 10px; border-radius: 12px;
+  font-size: 12px; font-weight: 600; margin: 4px 0;
+}
+.status-badge.success { background: #064e3b; color: #6ee7b7; }
+.status-badge.error { background: #7f1d1d; color: #fca5a5; }
+.error-msg { color: #fca5a5; font-size: 12px; margin: 6px 0; }
+.result-nodes { margin-top: 8px; }
+.result-node {
+  background: #0f172a; border: 1px solid #334155; border-radius: 6px;
+  padding: 8px; margin-bottom: 8px;
+}
+.result-node.error { border-color: #7f1d1d; }
+.result-node-header {
+  display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;
+}
+.status-dot.success { color: #6ee7b7; }
+.status-dot.error { color: #fca5a5; }
+.result-output {
+  font-size: 11px; color: #cbd5e1; background: #000;
+  padding: 6px; border-radius: 4px; overflow-x: auto; max-height: 200px;
+  font-family: 'SF Mono', Menlo, monospace;
+}
+
+.aita-node {
+  background: #1e293b; border: 2px solid #64748b; border-radius: 8px;
+  min-width: 160px; font-size: 12px;
+}
+.aita-node-header {
+  padding: 6px 10px; border-radius: 6px 6px 0 0; font-weight: 600;
+  font-size: 12px; color: white;
+}
+.aita-node-body { padding: 6px 10px; color: #94a3b8; }
