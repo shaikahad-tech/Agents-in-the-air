@@ -1,0 +1,26 @@
+# Render.com deployment config.
+# Docs: https://render.com/docs/blueprint-spec
+services:
+  - type: web
+    name: agents-in-the-air
+    runtime: python
+    rootDir: backend
+    buildCommand: pip install -e .
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: AITA_DATA
+        value: /data
+      - key: AITA_WORKSPACE
+        value: /data/workspace
+      # Add your secret API keys as environment variables here (or via the Render dashboard).
+      # The workflow config references them as ${{env:OPENAI_API_KEY}} etc.
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+    disk:
+      - name: data
+        mountPath: /data
+        sizeGB: 1
