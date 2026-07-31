@@ -1,0 +1,45 @@
+# Example workflow: CSV -> LLM classify -> JSON output
+# Demonstrates: file reading, JSON-mode LLM output, templating between nodes.
+{
+  "name": "CSV Classifier",
+  "description": "Read a CSV, ask an LLM to classify each row, save the result as JSON.",
+  "nodes": [
+    {
+      "id": "load_csv",
+      "type": "file",
+      "config": {
+        "operation": "read",
+        "path": "input.csv"
+      },
+      "position": { "x": 40, "y": 160 }
+    },
+    {
+      "id": "classify",
+      "type": "llm",
+      "config": {
+        "provider": "openai",
+        "model": "gpt-4o-mini",
+        "api_key": "${{env:OPENAI_API_KEY}}",
+        "system": "You classify support tickets. Respond as JSON with a categories array.",
+        "user": "Classify these tickets:\n{{load_csv.rows}}",
+        "json_mode": true,
+        "temperature": 0.1
+      },
+      "position": { "x": 380, "y": 160 }
+    },
+    {
+      "id": "save_json",
+      "type": "file",
+      "config": {
+        "operation": "write",
+        "path": "classifications.json",
+        "content": "{{classify.text}}"
+      },
+      "position": { "x": 720, "y": 160 }
+    }
+  ],
+  "edges": [
+    { "source": "load_csv", "target": "classify" },
+    { "source": "classify", "target": "save_json" }
+  ]
+}
