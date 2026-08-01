@@ -5,18 +5,19 @@ This keeps file nodes scoped to a workspace and prevents walking the FS.
 """
 from __future__ import annotations
 
-import json as _json
-import os
 import csv
 import io
+import json as _json
 import logging
-from typing import Any, Dict
+import os
+from typing import Any
 
+from ..config import get_settings
 from ..registry import BaseNode, register_node
 
 log = logging.getLogger("aita.nodes.fileops")
 
-DEFAULT_ROOT = os.environ.get("AITA_WORKSPACE", "/tmp/aita")
+DEFAULT_ROOT = str(get_settings().workspace_dir)
 
 
 def _safe_path(root: str, p: str) -> str:
@@ -30,7 +31,7 @@ def _safe_path(root: str, p: str) -> str:
 class FileNode(BaseNode):
     """Read, write, or list files. Returns dict depending on operation."""
 
-    async def run(self) -> Dict[str, Any]:
+    async def run(self) -> dict[str, Any]:
         op = self.config.get("operation", "read")
         path = self.config.get("path", "")
         content = self.config.get("content", "")
@@ -39,7 +40,7 @@ class FileNode(BaseNode):
 
         if op == "read":
             p = _safe_path(root, path)
-            with open(p, "r", encoding="utf-8") as f:
+            with open(p, encoding="utf-8") as f:
                 raw = f.read()
             # auto-parse JSON / CSV
             if path.endswith(".json"):
@@ -89,7 +90,7 @@ class FileNode(BaseNode):
             "type": "file",
             "label": "File",
             "description": "Read, write, list, or delete files in the workspace.",
-            "color": "#f59e0b",
+            "color": "f59e0b",
             "fields": [
                 {"name": "operation", "type": "select", "options": ["read", "write", "list", "delete"], "default": "read"},
                 {"name": "path", "type": "string", "required": True},
