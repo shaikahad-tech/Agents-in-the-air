@@ -11,6 +11,17 @@ export default defineConfig({
   },
   build: {
     outDir: '../backend/static',
-    emptyOutDir: true
+    emptyOutDir: true,
+    // Code splitting for better caching
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'react-vendor': ['react', 'react-dom'],
+          'reactflow-vendor': ['reactflow'],
+        }
+      }
+    },
+    // Increase chunk size warning limit (reactflow is large)
+    chunkSizeWarningLimit: 600,
   }
 })
