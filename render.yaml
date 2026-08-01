@@ -1,4 +1,4 @@
-# Render.com deployment config.
+# Render.com deployment config (v2).
 # Docs: https://render.com/docs/blueprint-spec
 services:
   - type: web
@@ -6,14 +6,20 @@ services:
     runtime: python
     rootDir: backend
     buildCommand: pip install -e .
-    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT --workers 2 --no-access-log
+    healthCheckPath: /api/health
     envVars:
+      - key: AITA_ENV
+        value: production
       - key: AITA_DATA
         value: /data
       - key: AITA_WORKSPACE
         value: /data/workspace
-      # Add your secret API keys as environment variables here (or via the Render dashboard).
-      # The workflow config references them as ${{env:OPENAI_API_KEY}} etc.
+      - key: AITA_CORS_ORIGINS
+        value: ""  # Set to your frontend URL in the dashboard
+      - key: AITA_API_KEY
+        sync: false  # MUST be set in dashboard for production
+      # LLM provider keys — set in dashboard, referenced as ${{env:NAME}} in workflows
       - key: OPENAI_API_KEY
         sync: false
       - key: ANTHROPIC_API_KEY
