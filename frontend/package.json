@@ -1,1 +1,21 @@
-ewogICJuYW1lIjogImFnZW50cy1pbi10aGUtYWlyLWZyb250ZW5kIiwKICAidmVyc2lvbiI6ICIwLjEuMCIsCiAgInByaXZhdGUiOiB0cnVlLAogICJ0eXBlIjogIm1vZHVsZSIsCiAgInNjcmlwdHMiOiB7CiAgICAiZGV2IjogInZpdGUiLAogICAgImJ1aWxkIjogInZpdGUgYnVpbGQiLAogICAgInByZXZpZXciOiAidml0ZSBwcmV2aWV3IgogIH0sCiAgImRlcGVuZGVuY2llcyI6IHsKICAgICJyZWFjdCI6ICJeMTguMy4xIiwKICAgICJyZWFjdC1kb20iOiAiXjE4LjMuMSIsCiAgICAicmVhY3RmbG93IjogIl4xMS4xMS40IiwKICAgICJ6dXN0YW5kIjogIl40LjUuMiIKICB9LAogICJkZXZEZXBlbmRlbmNpZXMiOiB7CiAgICAiQHZpdGVqcy9wbHVnaW4tcmVhY3QiOiAiXjQuMy4xIiwKICAgICJ2aXRlIjogIl41LjMuNCIKICB9Cn0K
+{
+  "name": "agents-in-the-air-frontend",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "reactflow": "^11.11.4",
+    "zustand": "^4.5.2"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.1",
+    "vite": "^5.3.4"
+  }
+}

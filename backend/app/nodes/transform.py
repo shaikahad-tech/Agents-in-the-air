@@ -5,11 +5,10 @@ operations: map, filter, extract, flatten, to_csv, from_csv, json_path.
 """
 from __future__ import annotations
 
-import json as _json
 import csv
 import io
 import logging
-from typing import Any, Dict, List
+from typing import Any
 
 from ..registry import BaseNode, register_node
 
@@ -91,7 +90,7 @@ class TransformNode(BaseNode):
             try:
                 return expr.format(**data)
             except KeyError as e:
-                raise ValueError(f"Missing key in template: {e}")
+                raise ValueError(f"Missing key in template: {e}") from e
 
         raise ValueError(f"Unknown transform operation '{op}'")
 
@@ -101,7 +100,7 @@ class TransformNode(BaseNode):
             "type": "transform",
             "label": "Transform",
             "description": "Reshape data without code: extract, map, filter, flatten, CSV, JSON-path, template.",
-            "color": "#ec4899",
+            "color": "ec4899",
             "fields": [
                 {"name": "operation", "type": "select",
                  "options": ["identity", "extract", "map", "filter", "flatten", "to_csv", "from_csv", "json_path", "template"],

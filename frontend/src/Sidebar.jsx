@@ -1,4 +1,6 @@
-export default function Sidebar({ nodeTypes }) {
+import { memo } from 'react'
+
+const Sidebar = memo(function Sidebar({ nodeTypes }) {
   const onDragStart = (e, type) => {
     e.dataTransfer.setData('application/aita-node', type)
     e.dataTransfer.effectAllowed = 'move'
@@ -6,19 +8,23 @@ export default function Sidebar({ nodeTypes }) {
   return (
     <div className="sidebar">
       <h3>Nodes</h3>
-      <p className="hint">Drag onto canvas:</p>
-      {nodeTypes.map(nt => (
-        <div
-          key={nt.type}
-          className="palette-node"
-          draggable
-          onDragStart={(e) => onDragStart(e, nt.type)}
-          style={{ borderLeftColor: nt.color || '#64748b' }}
-        >
-          <div className="palette-node-label">{nt.label}</div>
-          <div className="palette-node-desc">{nt.description}</div>
-        </div>
-      ))}
+      <p className="hint">Drag onto canvas →</p>
+      {nodeTypes.length === 0 && <p className="hint muted-loading">Loading nodes…</p>}
+      {nodeTypes.map(nt => {
+        const s = nt.schema || nt
+        return (
+          <div
+            key={nt.type}
+            className="palette-node"
+            draggable
+            onDragStart={(e) => onDragStart(e, nt.type)}
+            style={{ borderLeftColor: s.color || '#64748b' }}
+          >
+            <div className="palette-node-label">{s.label || nt.type}</div>
+            <div className="palette-node-desc">{s.description}</div>
+          </div>
+        )
+      })}
       <div className="sidebar-footer">
         <h4>Reference syntax</h4>
         <code>{'{{node_id.field}}'}</code>
@@ -28,4 +34,6 @@ export default function Sidebar({ nodeTypes }) {
       </div>
     </div>
   )
-}
+})
+
+export default Sidebar

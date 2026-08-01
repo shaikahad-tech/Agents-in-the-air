@@ -1,0 +1,33 @@
+# docker-compose.yml — local development + production-like testing.
+#
+# Usage:
+#   cp .env.example .env  # fill in API keys
+#   docker compose up --build
+#
+# The app is available at http://localhost:8000
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      - AITA_ENV=production
+      - AITA_DATA=/data
+      - AITA_WORKSPACE=/data/workspace
+    volumes:
+      - aita-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  aita-data:

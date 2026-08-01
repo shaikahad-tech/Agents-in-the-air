@@ -1,4 +1,4 @@
-"""DAG executor.
+"""DAG executor — production-grade.
 
 A workflow is a directed acyclic graph (DAG) of nodes. Each node has:
   - id            : unique string id
@@ -6,31 +6,35 @@ A workflow is a directed acyclic graph (DAG) of nodes. Each node has:
   - config        : dict of static config for the node
   - inputs / outputs : ports (mostly cosmetic for the UI; execution uses id refs)
 
-Nodes reference each other's outputs using Jinja2-style templates in their
-config values, e.g.  {{generate.title}}  resolves to the "title" key of the
-output dict produced by the node whose id is "generate".
+Nodes reference each other's outputs using templates in their config values,
+e.g.  {{generate.title}}  resolves to the "title" key of the output dict
+produced by the node whose id is "generate".
 
 The executor:
-  1. Builds a dependency graph from template references.
-  2. Topologically sorts it.
-  3. Runs each node once its dependencies are done.
-  4. Parallelises independent nodes with asyncio.
+  1. Validates the workflow (node count, cycle detection).
+  2. Builds a dependency graph from template references.
+  3. Topologically sorts it.
+  4. Runs each node once its dependencies are done.
+  5. Parallelises independent nodes with asyncio, capped by a semaphore.
+  6. Applies a per-node timeout and optional retry.
+  7. Propagates errors: if a dependency fails, downstream nodes are skipped.
 
 Secrets are never stored in the workflow. A config value of
   ${{env:MY_KEY}}
-is resolved from environment variables at execution time — the user wires the
-real keys into the deployment env, not the graph.
+is resolved from environment variables at execution time.
 """
 from __future__ import annotations
 
 import asyncio
-import json
+import logging
 import os
 import re
-import logging
+import time
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from typing import Any, Awaitable, Callable, Dict, List, Optional
+from typing import Any
 
+from .config import Settings, get_settings
 from .registry import NODE_TYPES, get_node_class
 
 log = logging.getLogger("aita.engine")
@@ -56,9 +60,9 @@ def resolve_env(value: str) -> str:
     return _ENV_RE.sub(_sub, value)
 
 
-def find_refs(value: Any) -> List[str]:
+def find_refs(value: Any) -> list[str]:
     """Return the set of node_ids this value (recursively) references."""
-    deps: List[str] = []
+    deps: list[str] = []
     if isinstance(value, str):
         for m in _REF_RE.finditer(value):
             deps.append(m.group(1))
@@ -72,7 +76,7 @@ def find_refs(value: Any) -> List[str]:
     return deps
 
 
-def substitute(value: Any, outputs: Dict[str, Any]) -> Any:
+def substitute(value: Any, outputs: dict[str, Any]) -> Any:
     """Recursively replace {{node.field}} tokens with concrete values."""
     if isinstance(value, str):
         # env first (secrets)
@@ -127,63 +131,80 @@ def substitute(value: Any, outputs: Dict[str, Any]) -> Any:
 @dataclass
 class NodeResult:
     node_id: str
-    status: str  # "success" | "error"
+    status: str  # "success" | "error" | "skipped"
     output: Any = None
     error: str = ""
-    started_at: Optional[float] = None
-    finished_at: Optional[float] = None
+    started_at: float | None = None
+    finished_at: float | None = None
+    attempts: int = 1
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "status": self.status,
+            "output": self.output,
+            "error": self.error,
+            "started_at": self.started_at,
+            "finished_at": self.finished_at,
+            "duration_s": round(
+                (self.finished_at or 0) - (self.started_at or 0), 3
+            ) if self.started_at and self.finished_at else None,
+            "attempts": self.attempts,
+        }
 
 
 @dataclass
 class ExecutionResult:
     workflow_id: str
     status: str  # "success" | "error"
-    nodes: Dict[str, NodeResult] = field(default_factory=dict)
-    started_at: Optional[float] = None
-    finished_at: Optional[float] = None
+    nodes: dict[str, NodeResult] = field(default_factory=dict)
+    started_at: float | None = None
+    finished_at: float | None = None
+    error: str = ""  # workflow-level error (e.g. cycle, no nodes)
 
-    def to_dict(self) -> Dict[str, Any]:
-        import time as _time
+    def to_dict(self) -> dict[str, Any]:
         return {
             "workflow_id": self.workflow_id,
             "status": self.status,
             "started_at": self.started_at,
             "finished_at": self.finished_at,
-            "duration_s": round((self.finished_at or _time.time()) - (self.started_at or _time.time()), 3),
-            "nodes": {
-                nid: {
-                    "status": nr.status,
-                    "output": nr.output,
-                    "error": nr.error,
-                }
-                for nid, nr in self.nodes.items()
-            },
+            "duration_s": round(
+                (self.finished_at or time.time()) - (self.started_at or time.time()), 3
+            ),
+            "error": self.error,
+            "nodes": {nid: nr.to_dict() for nid, nr in self.nodes.items()},
         }
 
 
 # --- topological sort ------------------------------------------------------
 
 
-def _topo_sort(nodes: List[dict]) -> List[str]:
-    """Return node ids in execution order based on {{ref}} dependencies."""
+def _topo_sort(nodes: list[dict]) -> list[str]:
+    """Return node ids in execution order based on {{ref}} dependencies.
+
+    Raises ValueError on cycles or self-references.
+    """
     by_id = {n["id"]: n for n in nodes}
-    deps: Dict[str, set] = {n["id"]: set() for n in nodes}
+    deps: dict[str, set[str]] = {n["id"]: set() for n in nodes}
     for n in nodes:
         for d in find_refs(n.get("config", {})):
-            if d in by_id and d != n["id"]:
+            if d == n["id"]:
+                raise ValueError(f"Node '{n['id']}' references itself.")
+            if d in by_id:
                 deps[n["id"]].add(d)
 
-    order: List[str] = []
-    ready = [nid for nid, d in deps.items() if not d]
+    order: list[str] = []
+    ready = sorted(nid for nid, d in deps.items() if not d)
     if not ready:
-        raise ValueError("Cycle detected (no node has zero dependencies) — workflow is not a DAG.")
+        raise ValueError(
+            "Cycle detected (no node has zero dependencies) — workflow is not a DAG."
+        )
     while ready:
         nid = ready.pop(0)
         order.append(nid)
         for other, d in deps.items():
             if nid in d:
                 d.discard(nid)
-                if not d and other not in order:
+                if not d and other not in order and other not in ready:
                     ready.append(other)
     if len(order) != len(nodes):
         remaining = set(by_id) - set(order)
@@ -195,94 +216,155 @@ def _topo_sort(nodes: List[dict]) -> List[str]:
 
 
 class WorkflowExecutor:
-    """Runs a workflow definition.
+    """Runs a workflow definition with production safeguards.
 
     Args:
         node_overrides: optional {node_type: callable} to inject custom node
             implementations (used for tests / sandboxing code nodes).
+        settings: inject settings (tests); defaults to global singleton.
     """
 
     def __init__(
         self,
-        node_overrides: Optional[Dict[str, Callable[..., Awaitable[Any]]]] = None,
+        node_overrides: dict[str, Callable[..., Awaitable[Any]]] | None = None,
+        settings: Settings | None = None,
     ) -> None:
         self.overrides = node_overrides or {}
+        self.settings = settings or get_settings()
 
-    async def run(self, workflow: Dict[str, Any], inputs: Optional[Dict[str, Any]] = None) -> ExecutionResult:
-        import time as _time
+    async def run(
+        self, workflow: dict[str, Any], inputs: dict[str, Any] | None = None
+    ) -> ExecutionResult:
         wf_id = workflow.get("id", "workflow")
         nodes = workflow.get("nodes", [])
-        if not nodes:
-            return ExecutionResult(workflow_id=wf_id, status="error", error="No nodes in workflow.")
 
-        result = ExecutionResult(workflow_id=wf_id, status="success", started_at=_time.time())
-        outputs: Dict[str, Any] = {}
+        if not nodes:
+            return ExecutionResult(
+                workflow_id=wf_id, status="error",
+                started_at=time.time(), finished_at=time.time(),
+                error="No nodes in workflow.",
+            )
+
+        # Safety cap
+        if len(nodes) > self.settings.max_workflow_nodes:
+            return ExecutionResult(
+                workflow_id=wf_id, status="error",
+                started_at=time.time(), finished_at=time.time(),
+                error=f"Workflow has {len(nodes)} nodes; max allowed is "
+                      f"{self.settings.max_workflow_nodes}.",
+            )
+
+        result = ExecutionResult(
+            workflow_id=wf_id, status="success", started_at=time.time()
+        )
+        outputs: dict[str, Any] = {}
 
         # Seed with external inputs, addressable as {{inputs.foo}}
         if inputs:
             outputs["inputs"] = inputs
 
+        # Topological sort
         try:
             order = _topo_sort(nodes)
         except ValueError as e:
             result.status = "error"
-            result.finished_at = _time.time()
+            result.finished_at = time.time()
             result.error = str(e)
             return result
 
-        # group into "waves" of independent nodes for parallel execution
+        # Concurrency semaphore — limits parallel node execution
+        sem = asyncio.Semaphore(self.settings.max_concurrent_nodes)
         by_id = {n["id"]: n for n in nodes}
-        done: set = set()
+        done: set[str] = set()
+
         while len(done) < len(order):
             wave = [
                 nid for nid in order
                 if nid not in done
-                and all(d in done for d in find_refs(by_id[nid].get("config", {})) if d in by_id)
+                and all(
+                    d in done
+                    for d in find_refs(by_id[nid].get("config", {}))
+                    if d in by_id
+                )
             ]
             if not wave:
                 break
 
-            tasks = [self._run_node(by_id[nid], outputs, result) for nid in wave]
+            tasks = [
+                self._run_node(by_id[nid], outputs, result, sem)
+                for nid in wave
+            ]
             await asyncio.gather(*tasks)
             done.update(wave)
 
-        result.finished_at = _time.time()
+        result.finished_at = time.time()
         if any(nr.status == "error" for nr in result.nodes.values()):
             result.status = "error"
         return result
 
-    async def _run_node(self, node: dict, outputs: Dict[str, Any], result: ExecutionResult) -> None:
-        import time as _time
+    async def _run_node(
+        self,
+        node: dict,
+        outputs: dict[str, Any],
+        result: ExecutionResult,
+        sem: asyncio.Semaphore,
+    ) -> None:
+        """Run a single node with timeout, retry, and concurrency control."""
         nid = node["id"]
         ntype = node.get("type")
         config = node.get("config", {})
 
-        # check upstream errors — if a dependency errored, skip
+        # Check upstream errors — skip if a dependency failed
         deps = find_refs(config)
         for d in deps:
             if d in result.nodes and result.nodes[d].status == "error":
                 nr = NodeResult(
-                    node_id=nid, status="error",
+                    node_id=nid, status="skipped",
                     error=f"Upstream node '{d}' failed; skipping.",
-                    started_at=_time.time(), finished_at=_time.time(),
+                    started_at=time.time(), finished_at=time.time(),
                 )
                 result.nodes[nid] = nr
                 outputs[nid] = {"error": nr.error}
                 return
 
-        nr = NodeResult(node_id=nid, status="success", started_at=_time.time())
-        try:
-            resolved_config = substitute(config, outputs)
-            node_cls = self.overrides.get(ntype) or get_node_class(ntype)
-            if node_cls is None:
-                raise ValueError(f"Unknown node type '{ntype}'. Available: {list(NODE_TYPES.keys())}")
-            output = await node_cls(resolved_config, context=outputs).run()
-            nr.output = output
-            outputs[nid] = output
-        except Exception as e:
-            log.exception("Node %s failed", nid)
-            nr.status = "error"
-            nr.error = f"{type(e).__name__}: {e}"
-            outputs[nid] = {"error": str(e)}
-        nr.finished_at = _time.time()
+        nr = NodeResult(node_id=nid, status="success", started_at=time.time())
+        timeout = self.settings.default_node_timeout
+        max_retries = 0  # extensible: per-node-type retry policy could go here
+
+        async with sem:  # respect concurrency limit
+            for attempt in range(1, max_retries + 2):
+                nr.attempts = attempt
+                try:
+                    resolved_config = substitute(config, outputs)
+                    node_cls = self.overrides.get(ntype) or get_node_class(ntype)
+                    if node_cls is None:
+                        raise ValueError(
+                            f"Unknown node type '{ntype}'. "
+                            f"Available: {list(NODE_TYPES.keys())}"
+                        )
+                    output = await asyncio.wait_for(
+                        node_cls(resolved_config, context=outputs).run(),
+                        timeout=timeout,
+                    )
+                    nr.output = output
+                    outputs[nid] = output
+                    nr.finished_at = time.time()
+                    result.nodes[nid] = nr
+                    return  # success
+
+                except TimeoutError:
+                    nr.status = "error"
+                    nr.error = f"Node timed out after {timeout}s."
+                    log.warning("Node %s timed out after %ss (attempt %d)",
+                                nid, timeout, attempt)
+                except Exception as e:
+                    nr.status = "error"
+                    nr.error = f"{type(e).__name__}: {e}"
+                    log.exception("Node %s failed (attempt %d)", nid, attempt)
+
+                if attempt <= max_retries:
+                    await asyncio.sleep(0.5 * attempt)  # simple backoff
+
+        nr.finished_at = time.time()
         result.nodes[nid] = nr
+        outputs[nid] = {"error": nr.error}
