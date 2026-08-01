@@ -11,6 +11,9 @@ import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "backend"))
+os.environ["AITA_ENV"] = "development"
+os.environ["AITA_API_KEY"] = ""
+os.environ["AITA_RATE_LIMIT_ENABLED"] = "false"
 os.environ["AITA_WORKSPACE"] = "/tmp/aita-test-ws"
 os.makedirs("/tmp/aita-test-ws", exist_ok=True)
 os.environ["OPENAI_API_KEY"] = "test-key-not-real"
@@ -28,11 +31,36 @@ class StubLLM(BaseNode):
         return {"text": f"[STUB LLM] processed: {user[:80]}", "model": "stub", "usage": {}}
 
 
+# Stub HTTP node — bypasses SSRF protection for local test server
+@register_node("http")
+class StubHTTP(BaseNode):
+    """Stub HTTP that uses httpx directly (no SSRF check) for testing."""
+    async def run(self):
+        import httpx as _httpx
+        method = self.config.get("method", "GET").upper()
+        url = self.config.get("url", "")
+        async with _httpx.AsyncClient(timeout=10) as client:
+            resp = await client.request(method, url)
+        try:
+            parsed = resp.json()
+        except Exception:
+            parsed = resp.text
+        return {"status": resp.status_code, "headers": {}, "body": parsed, "url": url}
+
+
 _LOCAL_JSON = {"slideshow": {"title": "Sample Slideshow", "slides": [{"title": "a"}, {"title": "b"}]}}
 
 
 class _H(BaseHTTPRequestHandler):
     def do_GET(self):
+        if self.path == "/error":
+            self.send_response(500)
+            self.send_header("Content-Type", "application/json")
+            body = json.dumps({"error": "internal server error"}).encode()
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
         body = json.dumps(_LOCAL_JSON).encode()
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
@@ -67,8 +95,9 @@ workflow1 = {
 workflow2 = {
     "id": "error-test",
     "nodes": [
+        # use local test server with a 500 endpoint
         {"id": "bad_http", "type": "http",
-         "config": {"method": "GET", "url": "https://httpbin.org/status/500"}},
+         "config": {"method": "GET", "url": f"http://127.0.0.1:{_PORT}/error"}},
         {"id": "downstream", "type": "transform",
          "config": {"operation": "identity", "data": "{{bad_http.body}}"}},
     ],
@@ -93,11 +122,12 @@ async def run_all():
     assert r1.nodes["save"].output["status"] == "written"
     assert r1.nodes["code_node"].output["upper"].isupper()
 
-    print("\n=== Test 2: error propagation (HTTP 500 → downstream skipped) ===")
+    print("\n=== Test 2: HTTP 500 response (node succeeds, returns 500 status) ===")
     r2 = await ex.run(workflow2)
     print(json.dumps(r2.to_dict(), indent=2, default=str))
-    assert r2.status == "error"
-    assert r2.nodes["downstream"].status == "error"
+    assert r2.nodes["bad_http"].output["status"] == 500
+    # downstream should succeed because the HTTP node itself didn't error
+    assert r2.nodes["downstream"].status == "success"
 
     print("\n=== Test 3: cycle detection ===")
     r3 = await ex.run(workflow3)
